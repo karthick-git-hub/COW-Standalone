@@ -38,6 +38,7 @@ class QuantumCommunicationSimulator:
         self.alice_original_bits_with_timestamps = []
         self.alice_bits_with_timestamps = []
         self.encoded_sequences_with_timestamps = []
+        self.encoded_sequences_with_timestamps_error = []
         self.bob_data_line_clicks = []
         self.bob_monitoring_line_clicks = []
         self.bob_monitoring_line_clicks_sorted = []
@@ -77,8 +78,7 @@ class QuantumCommunicationSimulator:
             base_timestamp += time_increment
             formatted_timestamp = self.format_timestamp(base_timestamp)
             self.alice_original_bits_with_timestamps.append((bit, formatted_timestamp))
-            for _ in range(photon_count):
-                self.alice_bits_with_timestamps.append((bit, formatted_timestamp))
+            self.alice_bits_with_timestamps.append((bit, formatted_timestamp))
         print("\n length --- ", len(self.alice_bits_with_timestamps),
               "self.alice_bits_with_timestamps -- ", self.alice_bits_with_timestamps)
         self.encoded_sequences_with_timestamps = [self.encode_bit(bit, timestamp) for bit, timestamp in
@@ -92,6 +92,17 @@ class QuantumCommunicationSimulator:
         print("\n decoy timestamps --- ", self.decoy_timestamps)
         self.adjust_vacuum_timestamps()  # Adjust decoy timestamps after insertion
         print("\n decoy timestamps --- ", self.decoy_timestamps)
+        for bit, timestamp in self.encoded_sequences_with_vacuum:
+            for _ in range(photon_count):
+                self.encoded_sequences_with_timestamps_error.append((bit, timestamp))
+        self.encoded_sequences_with_timestamps_error = [self.introduce_errors(seq_with_ts) for seq_with_ts in
+                                                  self.encoded_sequences_with_timestamps_error]
+        print("\n length after errors--- ", len(self.encoded_sequences_with_timestamps_error),
+              "self.encoded_sequences_with_timestamps after errors -- ", self.encoded_sequences_with_timestamps_error)
+        self.distanceCalculation(distance)
+
+
+    def send_via_nodes(self, distance):
         self.encoded_sequences_with_timestamps = [self.introduce_errors(seq_with_ts) for seq_with_ts in
                                                   self.encoded_sequences_with_timestamps]
         print("\n length after errors--- ", len(self.encoded_sequences_with_timestamps),
@@ -181,9 +192,9 @@ class QuantumCommunicationSimulator:
 
 
     def introduce_phase_errors(self):
-        self.encoded_sequences_with_timestamps = [self.add_phase_shift_errors(seq_with_ts) for seq_with_ts in
-                                                  self.encoded_sequences_with_timestamps]
-        print("\n length --- ", len(self.encoded_sequences_with_timestamps) , "self.encoded_sequences_with_timestamps  after phase Shifting errors -- ", self.encoded_sequences_with_timestamps)
+        self.encoded_sequences_with_timestamps_error = [self.add_phase_shift_errors(seq_with_ts) for seq_with_ts in
+                                                  self.encoded_sequences_with_timestamps_error]
+        print("\n length --- ", len(self.encoded_sequences_with_timestamps_error) , "self.encoded_sequences_with_timestamps  after phase Shifting errors -- ", self.encoded_sequences_with_timestamps_error)
 
 
     # Constants for demonstration
@@ -209,14 +220,14 @@ class QuantumCommunicationSimulator:
 
     def distanceCalculation(self, distance):
         encoded_sequences_with_timestamps = []
-        probability = 10 ** -(self.alpha * distance/ 10)
+        probability = 10 ** (-(self.alpha * distance)/ 10)
         print("\n probability -- ", probability)
-        for sequence in self.encoded_sequences_with_timestamps:
+        for sequence in self.encoded_sequences_with_timestamps_error:
             if random.random() < probability:
                 encoded_sequences_with_timestamps.append(sequence)
-        self.encoded_sequences_with_timestamps = encoded_sequences_with_timestamps
-        print("\n length after distance calculation--- ", len(self.encoded_sequences_with_timestamps),
-          "self.encoded_sequences_with_timestamps after errors -- ", self.encoded_sequences_with_timestamps)
+        self.encoded_sequences_with_timestamps_error = encoded_sequences_with_timestamps
+        print("\n length after distance calculation--- ", len(self.encoded_sequences_with_timestamps_error),
+          "self.encoded_sequences_with_timestamps after errors -- ", self.encoded_sequences_with_timestamps_error)
 
 
     def receive(self):
@@ -224,7 +235,7 @@ class QuantumCommunicationSimulator:
         self.bob_monitoring_line_clicks = []
         self.valid_timestamps = []
         self.dm2_clicks = 0
-        self.beam_splitter(self.encoded_sequences_with_timestamps)
+        self.beam_splitter(self.encoded_sequences_with_timestamps_error)
         print("\n self.bob_data_line_clicks.length -- ", len(self.bob_data_line_clicks), "\n self.bob_data_line_clicks -- ", self.bob_data_line_clicks)
         print("\n self.bob_monitoring_line_clicks.length -- ", len(self.bob_monitoring_line_clicks), "\n self.bob_monitoring_line_clicks -- ", self.bob_monitoring_line_clicks)
         # Correctly prepare data for preprocessing
@@ -289,34 +300,37 @@ class QuantumCommunicationSimulator:
             else:
                 return self.qc
         for sequence, timestamp in preprocessed_data_line_clicks:
-            # Apply the decoding logic to each value in the sequence
-            tuple_elements = sequence[0]  # This gets the tuple
-            decoded_sequence = []
-            for value in tuple_elements:
-                if value != 'decoy':
-                    decoded_sequence.append(decode_value(value))
+            decoded_value = []
+            for tuple_elements in sequence:
+                decoded_sequence = []
+                for value in tuple_elements:
+                    if value != 'decoy':
+                        decoded_sequence.append(decode_value(value))
+                    else:
+                        decoded_sequence.append('decoy')
+                # Check for specific sequences [0, 'decoy', 0] and [180, 'decoy', 180]
+                if decoded_sequence == [self.qc, VACUUM, self.qc]:
+                    value = 0
+                elif decoded_sequence == [self.qc_x, VACUUM, self.qc_x]:
+                    value = 1
+                elif decoded_sequence == ['decoy', 'decoy', 'decoy']:
+                    value = 'decoy'
+                # Check if the sequence contains 90, 270, or 45
+                elif decoded_sequence == [self.qc, 'decoy', self.qc_x] or decoded_sequence == [self.qc_x, 'decoy', self.qc]:
+                    # Choose randomly between self.qc and self.qc_x
+                    value = random.choice([0, 180])
+                elif self.qc_90 in decoded_sequence:
+                    value = 90
+                elif self.qc_270 in decoded_sequence:
+                    value = 270
+                elif 45 in decoded_sequence:
+                    value = 45
                 else:
-                    decoded_sequence.append('decoy')
-            # Check for specific sequences [0, 'decoy', 0] and [180, 'decoy', 180]
-            if decoded_sequence == [self.qc, VACUUM, self.qc]:
-                value = 0
-            elif decoded_sequence == [self.qc_x, VACUUM, self.qc_x]:
-                value = 1
-            elif decoded_sequence == ['decoy', 'decoy', 'decoy']:
-                value = 'decoy'
-            # Check if the sequence contains 90, 270, or 45
-            elif decoded_sequence == [self.qc, 'decoy', self.qc_x] or decoded_sequence == [self.qc_x, 'decoy', self.qc]:
-                # Choose randomly between self.qc and self.qc_x
-                value = random.choice([0, 180])
-            elif self.qc_90 in decoded_sequence:
-                value = 90
-            elif self.qc_270 in decoded_sequence:
-                value = 270
-            elif 45 in decoded_sequence:
-                value = 45
-            else:
-                value = None  # Use None or a specific value to indicate an unrecognized sequence
-            decoded_bit.append((value, timestamp))
+                    value = None  # Use None or a specific value to indicate an unrecognized sequence
+                decoded_value.append((value))
+            counter = Counter(decoded_value)
+            most_common_element, most_common_count = counter.most_common(1)[0]
+            decoded_bit.append((most_common_element, timestamp))
         return decoded_bit
 
 
@@ -517,9 +531,11 @@ class QuantumCommunicationSimulator:
                 return  -(len(self.random_bits) / len(self.encoded_sequences_with_vacuum)) / self.paper_clicks
 
 
-    def run_simulation(self, distances, rounds=1000000, photon_counts=[100], bits_count=500, alphas=[0.10, 0.15, 0.5]):
-        self.error_rate = 0.3  # Fixed error rate
+    def run_simulation(self, distances, rounds=1000, photon_counts=[1], bits_count=500, alphas=[0.10, 0.15, 0.5]):
+        self.error_rate = 0.2  # Fixed error rate
         self.simulation_results = {}
+        distance_between_alice_and_bob = 0
+        nodes = 0
         success_rates_for_distance_alpha = {}
         key_rates_for_distance_alpha = {}
         shannon_entropy_rates_for_distance_alpha = {}
@@ -550,8 +566,12 @@ class QuantumCommunicationSimulator:
                         f"\nRound {round_num} of {rounds},  Error Rate: {self.error_rate},  alpha: {alpha}, distance: {distance}")
                     self.reset_simulation()
                     bits = [random.choice([0, 1]) for _ in range(bits_count)]
+                    distance_between_alice_and_bob = self.distance
                     self.send(bits, round_num, photon_counts[0], self.distance)
                     self.introduce_phase_errors()
+                    for node in range(1, nodes):
+                        distance_between_alice_and_bob = self.distance
+                        self.send_via_nodes(distance_between_alice_and_bob)
                     self.receive()
                     key_rate = self.ClassicalChannelCommunication(round_num)
                     key_rates.append(key_rate)
@@ -562,26 +582,26 @@ class QuantumCommunicationSimulator:
                     entropy.append(self.entropy())
 
                 average_success_rate = np.mean(success_rates) if success_rates else 0
-                success_rates_for_distance.append((distance, (average_success_rate)))
+                success_rates_for_distance.append((distance_between_alice_and_bob, (average_success_rate)))
                 print(f"average_success_rate -- {average_success_rate}")
 
                 average_key_rate = np.mean(key_rates) if key_rates else 0
                 print(f"average_key_rate -- {average_key_rate}")
-                key_rates_for_distance.append((distance, (average_key_rate)))
+                key_rates_for_distance.append((distance_between_alice_and_bob, (average_key_rate)))
 
                 average_shannon_entropy_rate = self.shannon_entropy_qber((100 - average_success_rate) / 100) if average_success_rate else 0
-                shannon_entropy_rates_for_distance.append((distance, (average_shannon_entropy_rate)))
+                shannon_entropy_rates_for_distance.append((distance_between_alice_and_bob, (average_shannon_entropy_rate)))
 
                 average_dm2_clicks = np.mean(dm2_clicks) if dm2_clicks else 0
-                dm2_clicks_for_distance.append((distance,  (average_dm2_clicks)))
+                dm2_clicks_for_distance.append((distance_between_alice_and_bob,  (average_dm2_clicks)))
 
                 average_paper_clicks = np.mean(paper_clicks) if paper_clicks else 0
                 print(f"average_paper_clicks -- {average_paper_clicks}")
-                paper_clicks_for_distance.append((distance, (average_paper_clicks)))
+                paper_clicks_for_distance.append((distance_between_alice_and_bob, (average_paper_clicks)))
 
                 average_entropy_clicks = np.mean(entropy) if entropy else 0
                 print(f"average_entropy_clicks -- {average_entropy_clicks}")
-                entropy_rates_for_distance.append((distance, (average_entropy_clicks)))
+                entropy_rates_for_distance.append((distance_between_alice_and_bob, (average_entropy_clicks)))
 
             success_rates_for_distance_alpha[alpha] = success_rates_for_distance
             key_rates_for_distance_alpha[alpha] = key_rates_for_distance
@@ -636,7 +656,7 @@ class QuantumCommunicationSimulator:
                         paper_clicks_for_distance_alpha, entropy_rates_for_distance_alpha):
         parent_directory = os.path.join(os.getcwd(), "..")
         logs_directory = os.path.join(parent_directory, "logs")
-        new_directory = os.path.join(logs_directory, "1000000Rounds")  # Creating a subdirectory 'p2p'
+        new_directory = os.path.join(logs_directory, "10000RoundsWith5Nodes")  # Creating a subdirectory 'p2p'
         if not os.path.exists(new_directory):
             os.makedirs(new_directory)
 
